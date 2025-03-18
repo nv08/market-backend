@@ -13,21 +13,23 @@ async function flushToDatabase() {
   flushingBuffer.clear();
 
   const seenKeys = new Set();
-  for (const [stock_symbol, data] of currentBuffer) {
+  for (const [stock_symbol, stockData] of currentBuffer) {
     const lastFlushTs = lastFlushedTimestamps.get(stock_symbol) || 0;
     const uniqueData = [];
-    for (const d of data) {
+    const dataPoints = stockData.dataPoints || [];
+
+    for (const d of dataPoints) {
       const key = `${stock_symbol}|${d.timestamp}`;
       if (d.timestamp > lastFlushTs && !seenKeys.has(key)) {
         seenKeys.add(key);
         uniqueData.push({ ...d });
+      } else {
+        console.log(
+          `Skipped ${key}: already flushed or duplicate in this batch`
+        );
       }
-      // else if (d.timestamp <= lastFlushTs) {
-      //   console.log(`Skipped already flushed: ${key}`);
-      // } else {
-      //   console.log(`Duplicate found and skipped: ${key}`);
-      // }
     }
+
     if (uniqueData.length > 0) {
       flushingBuffer.set(stock_symbol, uniqueData);
     }
@@ -45,21 +47,46 @@ async function flushToDatabase() {
   try {
     console.time("flush");
 
+    // Check existing timestamps in DB
+    const allKeys = [...seenKeys];
+    const existingResult = await client.query(
+      `SELECT stock_symbol || '|' || timestamp AS key 
+       FROM stocks 
+       WHERE stock_symbol || '|' || timestamp = ANY($1::text[])`,
+      [allKeys]
+    );
+    const existingKeys = new Set(existingResult.rows.map((row) => row.key));
+    console.log("Existing keys in DB:", [...existingKeys]);
+
     const rows = [];
     let rowCount = 0;
-    let maxTimestamps = new Map();
+    const maxTimestamps = new Map();
+
     for (const [stock_symbol, data] of flushingBuffer) {
       for (const d of data) {
-        rows.push(
-          `${stock_symbol},${d.cmp},${d.open},${d.high},${d.low},${d.close},${d.timestamp}\n`
-        );
-        rowCount++;
-        const currentMax = maxTimestamps.get(stock_symbol) || 0;
-        if (d.timestamp > currentMax) {
-          maxTimestamps.set(stock_symbol, d.timestamp);
+        const key = `${stock_symbol}|${d.timestamp}`;
+        if (!existingKeys.has(key)) {
+          rows.push(
+            `${stock_symbol},${d.cmp},${d.open},${d.high},${d.low},${d.close},${d.timestamp}\n`
+          );
+          rowCount++;
+          const currentMax = maxTimestamps.get(stock_symbol) || 0;
+          if (d.timestamp > currentMax) {
+            maxTimestamps.set(stock_symbol, d.timestamp);
+          }
+        } else {
+          console.log(`Skipped ${key}: already exists in DB`);
         }
       }
     }
+
+    if (rowCount === 0) {
+      console.log("No new rows to flush after DB check");
+      flushingBuffer.clear();
+      return;
+    }
+
+    console.log(`Flushing ${rowCount} rows:`, rows);
 
     const readableStream = Readable.from(rows);
     const copyStream = client.query(
@@ -96,7 +123,6 @@ async function flushToDatabase() {
     client.release();
   }
 }
-
 async function runAggregations() {
   const intervals = [10, 15, 30];
   const client = await pool.connect();
@@ -115,7 +141,6 @@ async function runAggregations() {
         `Running aggregation for interval: ${interval}, intervalMs: ${intervalMs}, nowMs: ${nowMs}`
       );
 
-      // Calculate pct_change over the full interval window
       await client.query(
         `
         INSERT INTO stock_aggregates (stock_symbol, interval_minutes, timestamp_bucket, pct_change)

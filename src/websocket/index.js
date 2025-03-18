@@ -2,10 +2,14 @@ const { MarketDataApiToOHLC, MarketDataWebsocketToOHLC } = require("../helper");
 const { Buffer } = require("buffer");
 const { FeedResponse } = require("./marketDataFeed_pb");
 const WebSocket = require("ws");
+const UpstoxClient = require("upstox-js-sdk");
+
+const apiVersion = "2.0";
+let defaultClient = UpstoxClient.ApiClient.instance;
+let OAUTH2 = defaultClient.authentications["OAUTH2"];
 
 const getStockData = async (instrument) => {
   const url = `https://api.upstox.com/v2/historical-candle/intraday/NSE_EQ|${instrument}/1minute`;
-
   try {
     const response = await fetch(url, {
       method: "GET",
@@ -13,14 +17,10 @@ const getStockData = async (instrument) => {
         Accept: "application/json",
       },
     });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
     if (data && data.status === "success") {
-      const modifiedData = MarketDataApiToOHLC(data, instrument);
+      const modifiedData = MarketDataApiToOHLC(data.data, instrument);
       return modifiedData;
     }
     return data;
@@ -32,44 +32,28 @@ const getStockData = async (instrument) => {
 
 class UpstoxWebSocket {
   constructor(token, onOpen, onClose, onError) {
+    OAUTH2.accessToken = token;
     this.token = token;
     this.onOpen = onOpen;
     this.onClose = onClose;
     this.onError = onError;
     this.ws = null;
     this.subscriptions = [];
+    this.callbacks = new Map();
     this.connectWebSocket();
   }
 
   async getUrl() {
-    const apiUrl = "https://api-v2.upstox.com/feed/market-data-feed/authorize";
-    let headers = {
-      "Content-type": "application/json",
-      Authorization: "Bearer " + this.token,
-    };
-    try {
-      const response = await fetch(apiUrl, {
-        method: "GET",
-        headers: headers,
-      });
-      if (!response.ok) {
-        throw new Error(`Network response was not ok: ${response.status}`);
-      }
-      const res = await response.json();
-      return res.data.authorizedRedirectUri;
-    } catch (error) {
-      console.error("Error fetching WebSocket URL:", error);
-      throw error;
-    }
-  }
-
-  async blobToArrayBuffer(blob) {
-    if ("arrayBuffer" in blob) return await blob.arrayBuffer();
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(blob);
+      let apiInstance = new UpstoxClient.WebsocketApi();
+      apiInstance.getMarketDataFeedAuthorize(apiVersion, (error, data) => {
+        if (error) {
+          console.error("Error fetching WebSocket URL:", error);
+          reject(error);
+        } else {
+          resolve(data.data.authorizedRedirectUri);
+        }
+      });
     });
   }
 
@@ -85,54 +69,89 @@ class UpstoxWebSocket {
   async connectWebSocket() {
     try {
       const wsUrl = await this.getUrl();
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(wsUrl, {
+        headers: {
+          "Api-Version": apiVersion,
+          Authorization: `Bearer ${this.token}`,
+        },
+        followRedirects: true,
+      });
 
-      this.ws.binaryType = "arraybuffer";
-
-      this.ws.onopen = () => {
+      this.ws.on("open", () => {
         this.onOpen();
         console.log("Connected");
-        // Send any pending subscriptions
         this.subscriptions.forEach(({ data, callback }) => {
           this.sendSubscription(data, callback);
         });
         this.subscriptions = [];
-      };
+      });
 
-      this.ws.onclose = () => {
+      this.ws.on("close", () => {
         this.onClose();
         console.log("Disconnected");
-      };
+      });
 
-      this.ws.onerror = (error) => {
+      this.ws.on("error", (error) => {
         this.onError(error);
-        console.log("WebSocket error:", error);
-      };
+        console.error("WebSocket error:", error);
+      });
 
-      this.ws.onmessage = async (event) => {
-        const arrayBuffer = event.data;
-        let buffer = Buffer.from(arrayBuffer);
-        let response = this.decodeProtobuf(buffer);
+      this.ws.on("message", (data) => {
+        const buffer = Buffer.from(data);
+        const response = this.decodeProtobuf(buffer);
         if (response) {
-          console.log("Received response:", response.toObject());
+          const responseObj = response.toObject();
+          // console.log(
+          //   "Raw WebSocket response:",
+          //   JSON.stringify(responseObj, null, 2)
+          // );
+
+          const modifiedResponses = MarketDataWebsocketToOHLC(responseObj);
+          // console.log("Modified responses array:", modifiedResponses);
+
+          // Iterate over all OHLC objects and invoke callbacks
+          modifiedResponses.forEach((response) => {
+            const sym = response?.stock_symbol;
+            if (sym) {
+              const cb = this.callbacks.get(sym);
+              if (cb) {
+                cb(response);
+              } else {
+                console.warn(`No callback found for symbol ${sym}`);
+              }
+            }
+          });
+        } else {
+          console.warn("Received invalid Protobuf response");
         }
-      };
+      });
     } catch (error) {
       console.error("WebSocket connection error:", error);
+      this.onError(error);
     }
   }
 
   sendSubscription(data, callback) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn("WebSocket not open, cannot send subscription");
+      return;
+    }
     this.ws.send(Buffer.from(JSON.stringify(data)));
-    this.ws.onmessage = async (event) => {
-      const arrayBuffer = event.data;
-      let buffer = Buffer.from(arrayBuffer);
-      let response = this.decodeProtobuf(buffer);
-      callback(response.toObject());
-    };
+    console.log(`Subscription sent: ${JSON.stringify(data)}`);
+    const [_, symbol] = data.data.instrumentKeys[0].split("|");
+    this.callbacks.set(symbol, callback);
   }
 
-  subscribe(data, callback) {
+  subscribe(symbol, callback) {
+    const data = {
+      guid: `guid-${Date.now()}`,
+      method: "sub",
+      data: {
+        mode: "full",
+        instrumentKeys: [`NSE_EQ|${symbol}`],
+      },
+    };
+
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.sendSubscription(data, callback);
     } else {
@@ -141,7 +160,6 @@ class UpstoxWebSocket {
         "WebSocket is not open. Subscription added to pending list."
       );
     }
-    console.log(`Subscription sent: ${JSON.stringify(data)}`);
   }
 
   unsubscribe(symbol) {
@@ -159,9 +177,9 @@ class UpstoxWebSocket {
       },
     };
 
-    const message = Buffer.from(JSON.stringify(data));
-    this.ws.send(message);
+    this.ws.send(Buffer.from(JSON.stringify(data)));
     console.log(`Unsubscription sent: ${JSON.stringify(data)}`);
+    this.callbacks.delete(`NSE_EQ|${symbol}`);
   }
 
   close() {
@@ -172,7 +190,15 @@ class UpstoxWebSocket {
   }
 }
 
+const token = process.env.UPSTOX_TOKEN;
+
+const onOpen = () => console.log("WebSocket opened");
+const onClose = () => console.log("WebSocket closed");
+const onError = (error) => console.error("WebSocket error:", error);
+
+const upstoxWebsocket = new UpstoxWebSocket(token, onOpen, onClose, onError);
+
 module.exports = {
-  UpstoxWebSocket,
+  upstoxWebsocket,
   getStockData,
 };
