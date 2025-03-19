@@ -9,7 +9,6 @@ const lastFlushedTimestamps = new Map();
 
 async function flushToDatabase() {
   console.log("Current buffer size before flush:", currentBuffer.size);
-
   flushingBuffer.clear();
 
   const seenKeys = new Set();
@@ -123,50 +122,59 @@ async function flushToDatabase() {
     client.release();
   }
 }
-async function runAggregations() {
-  const intervals = [10, 15, 30];
-  const client = await pool.connect();
-  try {
-    const nowMs = Math.floor(Date.now());
-    const earliestData = await client.query(
-      "SELECT MIN(timestamp) AS min_ts FROM stocks"
-    );
-    const minTs = earliestData.rows[0]?.min_ts || nowMs;
-    const dataSpan = nowMs - minTs;
-    console.log(`Data span: ${dataSpan / 60000} minutes`);
 
-    for (const interval of intervals) {
-      const intervalMs = interval * 60 * 1000;
-      console.log(
-        `Running aggregation for interval: ${interval}, intervalMs: ${intervalMs}, nowMs: ${nowMs}`
-      );
-
-      await client.query(
-        `
-        INSERT INTO stock_aggregates (stock_symbol, interval_minutes, timestamp_bucket, pct_change)
-        SELECT 
-          stock_symbol,
-          $1::INTEGER AS interval_minutes,
-          $3::BIGINT - ($3::BIGINT % $2::BIGINT) AS timestamp_bucket,
-          ROUND(
-            ((LAST(close, timestamp) - FIRST(close, timestamp)) / FIRST(close, timestamp)) * 100,
-            2
-          ) AS pct_change
-        FROM stocks
-        WHERE timestamp::BIGINT BETWEEN $3::BIGINT - $2::BIGINT AND $3::BIGINT
-        GROUP BY stock_symbol
-        ON CONFLICT (stock_symbol, interval_minutes, timestamp_bucket)
-        DO UPDATE SET pct_change = EXCLUDED.pct_change;
-      `,
-        [interval, intervalMs, nowMs]
-      );
-    }
-    console.log("Aggregations updated for intervals:", intervals);
-  } catch (e) {
-    console.error("Aggregation failed:", e.message);
-  } finally {
-    client.release();
-  }
+async function runAggregation(client, interval, intervalMs, nowMs) {
+  console.log(
+    `Running aggregation for ${interval}-minute interval at ${new Date(
+      nowMs
+    ).toISOString()}`
+  );
+  await client.query(
+    `
+    INSERT INTO stock_aggregates (stock_symbol, interval_minutes, timestamp_bucket, pct_change)
+    SELECT 
+      stock_symbol,
+      $1::INTEGER AS interval_minutes,
+      ($3::BIGINT - ($3::BIGINT % $2::BIGINT)) AS timestamp_bucket,
+      ROUND(
+        ((LAST(close, timestamp) - FIRST(close, timestamp)) / FIRST(close, timestamp)) * 100,
+        2
+      ) AS pct_change
+    FROM stocks
+    WHERE timestamp::BIGINT BETWEEN ($3::BIGINT - $2::BIGINT) AND $3::BIGINT
+    GROUP BY stock_symbol
+    ON CONFLICT (stock_symbol, interval_minutes, timestamp_bucket)
+    DO UPDATE SET pct_change = EXCLUDED.pct_change;
+    `,
+    [interval, intervalMs, nowMs]
+  );
 }
 
-module.exports = { flushToDatabase, runAggregations };
+function scheduleAggregations() {
+  const dbIntervals = [
+    { minutes: 10, ms: 10 * 60 * 1000 },
+    { minutes: 15, ms: 15 * 60 * 1000 },
+    { minutes: 30, ms: 15 * 60 * 1000 },
+    { minutes: 60, ms: 15 * 60 * 1000 },
+  ];
+
+  dbIntervals.forEach(({ minutes, ms }) => {
+    setInterval(async () => {
+      const client = await pool.connect();
+      try {
+        const nowMs = Math.floor(Date.now());
+        await runAggregation(client, minutes, ms, nowMs);
+        console.log(`Aggregation completed for ${minutes}-minute interval`);
+      } catch (e) {
+        console.error(
+          `Aggregation failed for ${minutes}-minute interval:`,
+          e.message
+        );
+      } finally {
+        client.release();
+      }
+    }, ms);
+  });
+}
+
+module.exports = { flushToDatabase, scheduleAggregations };

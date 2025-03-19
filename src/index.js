@@ -2,7 +2,7 @@
 
 const express = require("express");
 const { setupDatabase, pool } = require("./db");
-const { flushToDatabase } = require("./aggregator");
+const { flushToDatabase, scheduleAggregations } = require("./aggregator");
 const cors = require("cors");
 require("dotenv").config();
 const { FLUSHING_TO_DB_INTERVAL } = require("./constants");
@@ -25,6 +25,7 @@ function handleWebSocketData(data) {
 async function startServer() {
   await setupDatabase();
   setInterval(flushToDatabase, FLUSHING_TO_DB_INTERVAL);
+  scheduleAggregations();
   // setInterval(runAggregations, RUNNING_AGGREGATIONS_INTERVAL);
 
   try {
