@@ -106,8 +106,67 @@ function MarketDataWebsocketToOHLC(data) {
   return ohlcDataArray;
 }
 
+const colors = {
+  reset: "\x1b[0m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  cyan: "\x1b[36m"
+};
+
+const styles = {
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  italic: "\x1b[3m",
+  underline: "\x1b[4m",
+  inverse: "\x1b[7m",
+  hidden: "\x1b[8m",
+  strike: "\x1b[9m"
+};
+
+class ColorString {
+  constructor(str) {
+    this.str = str;
+    this.modifications = [];
+  }
+
+  bold() {
+    this.modifications.push(styles.bold);
+    return this.toString();
+  }
+
+  italic() {
+    this.modifications.push(styles.italic);
+    return this.toString();
+  }
+
+  underline() {
+    this.modifications.push(styles.underline);
+    return this.toString();
+  }
+
+  toString() {
+    const allModifications = this.modifications.join('');
+    const colorCode = this.str.slice(0, 5);
+    return `${colorCode}═══> ${allModifications}${this.str.slice(5)}${colors.reset}`;
+  }
+}
+
+const colorize = {
+  red: (text) => new ColorString(`${colors.red}${text}`),
+  green: (text) => new ColorString(`${colors.green}${text}`),
+  yellow: (text) => new ColorString(`${colors.yellow}${text}`),
+  blue: (text) => new ColorString(`${colors.blue}${text}`),
+  magenta: (text) => new ColorString(`${colors.magenta}${text}`),
+  cyan: (text) => new ColorString(`${colors.cyan}${text}`)
+};
+
+
 module.exports = {
   createThrottledLog,
   MarketDataApiToOHLC,
   MarketDataWebsocketToOHLC,
+  colorize
 };

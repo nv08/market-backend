@@ -4,6 +4,7 @@
   "description": "",
   "main": "src/index.js",
   "scripts": {
+    "main": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon src/index.js",
     "proto": "grpc_tools_node_protoc --js_out=import_style=commonjs,binary:./src/websocket --grpc_out=./src/websocket --proto_path=./src/websocket ./src/websocket/marketDataFeed.proto"

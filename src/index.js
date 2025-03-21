@@ -11,10 +11,13 @@ const { getTopStocks } = require("./controllers/computation");
 const { addStockData } = require("./memory");
 const { fetchAndStoreInitialData } = require("./query");
 const { upstoxWebsocket } = require("./websocket");
+const { colorize } = require("./helper");
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(cors());
+
+console.log(colorize.red("Starting server...").bold());
 
 function handleWebSocketData(data) {
   if (data) {
