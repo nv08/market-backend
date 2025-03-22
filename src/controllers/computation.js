@@ -6,11 +6,17 @@ const {
 } = require("../constants");
 
 const getTopStocks = async (req, res) => {
-  const { sort } = req.query;
+  const { sort, order } = req.query;
   const sortInterval = sort ? parseInt(sort, 10) : DEFAULT_SORT_MINUTE;
+  const sortOrder = order ? order.toLowerCase() : "desc"; // Default to 'desc'
   const limit = DEFAULT_TOP_STOCKS_LIMIT;
-  const memoryIntervals = [1, 2, 3, 4, 5];
+  const memoryIntervals = [0, 1, 2, 3, 4, 5];
   const dbIntervals = [10, 15, 30, 60];
+
+  // Validate sortOrder
+  if (!["asc", "desc"].includes(sortOrder)) {
+    return res.status(400).send("Invalid sort order. Use 'asc' or 'desc'.");
+  }
 
   try {
     // Get subscribed stocks
@@ -23,22 +29,17 @@ const getTopStocks = async (req, res) => {
 
     const client = await pool.connect();
     try {
-      // Fetch latest current market price (cmp)
-      const latestPricesResult = await client.query(
-        `
-        SELECT DISTINCT ON (stock_symbol) stock_symbol, cmp
-        FROM stocks
-        WHERE stock_symbol = ANY($1::text[])
-        ORDER BY stock_symbol, timestamp DESC
-        `,
-        [subscribedStocks]
-      );
-
+      // Prepare stock map with cmp from memory
       const stockMap = new Map();
-      latestPricesResult.rows.forEach((row) => {
-        stockMap.set(row.stock_symbol, {
-          stock_symbol: row.stock_symbol,
-          cmp: row.cmp !== null ? row.cmp : "N/A",
+      subscribedStocks.forEach((symbol) => {
+        const stockData = currentBuffer.get(symbol);
+        const cmp =
+          stockData && stockData.latestClose !== undefined
+            ? stockData.latestClose
+            : "N/A";
+        stockMap.set(symbol, {
+          stock_symbol: symbol,
+          cmp,
         });
       });
 
@@ -69,7 +70,7 @@ const getTopStocks = async (req, res) => {
         stockMap.set(row.stock_symbol, stock);
       });
 
-      // Compute percentage changes for memory intervals (1, 2, 3, 4, 5)
+      // Compute percentage changes for memory intervals (0, 1, 2, 3, 4, 5)
       subscribedStocks.forEach((symbol) => {
         const stock = stockMap.get(symbol) || {
           stock_symbol: symbol,
@@ -92,7 +93,12 @@ const getTopStocks = async (req, res) => {
             return a.stock_symbol.localeCompare(b.stock_symbol);
           if (aChange === "N/A") return 1;
           if (bChange === "N/A") return -1;
-          return bChange - aChange;
+          // Apply sort direction
+          if (sortOrder === "asc") {
+            return aChange - bChange;
+          } else {
+            return bChange - aChange;
+          }
         })
         .slice(0, limit);
 

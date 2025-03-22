@@ -12,6 +12,8 @@ const { addStockData } = require("./memory");
 const { fetchAndStoreInitialData } = require("./query");
 const { upstoxWebsocket } = require("./websocket");
 const { colorize } = require("./helper");
+const { simulateWebSocketData } = require("./simulator");
+const {notification} = require("./controllers/notifications");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -30,6 +32,8 @@ async function startServer() {
   setInterval(flushToDatabase, FLUSHING_TO_DB_INTERVAL);
   scheduleAggregations();
   // setInterval(runAggregations, RUNNING_AGGREGATIONS_INTERVAL);
+  simulateWebSocketData(1, "INE040H01021", 1)
+  simulateWebSocketData(1, "INE00CE01017", 5)
 
   try {
     const result = await pool.query(
@@ -57,6 +61,7 @@ async function startServer() {
 app.get("/stocks/top", getTopStocks);
 app.post("/stocks/add", addStock);
 app.post("/stocks/remove", removeStock);
+app.get("/notifications", notification);
 
 app.get("/ping", (req, res) => res.send("ok"));
 

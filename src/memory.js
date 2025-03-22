@@ -91,28 +91,16 @@ function computePctChange(stock_symbol, intervalMinutes) {
     dataPoints: [],
     latestClose: null,
   };
-  const { dataPoints, latestClose } = stockData;
-
-  console.log(
-    `Computing ${intervalMinutes}-minute change for ${stock_symbol}:`
-  );
-  console.log(`  Now: ${new Date().toISOString()}`);
-  console.log(
-    `  Buffer size: ${dataPoints.length}, timestamps: ${dataPoints
-      .map((d) => new Date(d.timestamp).toISOString())
-      .join(", ")}`
-  );
-  console.log(`  Latest Close: ${latestClose}`);
+  const { dataPoints } = stockData;
 
   if (dataPoints.length === 0) {
-    console.log(`  No data points in buffer`);
-    return 0;
+    console.log(`No data points in buffer for ${stock_symbol}`);
+    return "N/A";
   }
 
-  // Sort dataPoints ascending (should already be sorted, but ensure)
+  // Sort data points by timestamp (ascending)
   dataPoints.sort((a, b) => a.timestamp - b.timestamp);
 
-  // Round current time to the nearest minute and get the last completed minute
   const now = Date.now();
   const roundToMinute = (ts) => {
     const date = new Date(ts);
@@ -120,39 +108,94 @@ function computePctChange(stock_symbol, intervalMinutes) {
     date.setMilliseconds(0);
     return date.getTime();
   };
-  const currentMinute = roundToMinute(now);
-  const lastCompletedMinute = currentMinute - 60 * 1000; // Previous minute
 
-  // Filter dataPoints up to the last completed minute for the interval
-  const cutoff = lastCompletedMinute - (intervalMinutes - 1) * 60 * 1000;
-  const filtered = dataPoints.filter(
-    (d) => d.timestamp >= cutoff && d.timestamp <= lastCompletedMinute
-  );
+  // Define minute boundaries
+  const currentMinuteStart = roundToMinute(now);           // e.g., 9:15:00
+  const previousMinuteStart = currentMinuteStart - 60 * 1000; // e.g., 9:14:00
+  const secondLastMinuteStart = previousMinuteStart - 60 * 1000; // e.g., 9:13:00
 
-  console.log(
-    `  Filtered size: ${filtered.length}, timestamps: ${filtered
-      .map((d) => new Date(d.timestamp).toISOString())
-      .join(", ")}`
-  );
-
-  if (filtered.length < intervalMinutes) {
-    console.log(
-      `  Not enough data points for ${intervalMinutes}-minute interval`
+  if (intervalMinutes === 0) {
+    // Case: Nearest minute open to latest close
+    // Filter data points in the current minute
+    const currentMinuteData = dataPoints.filter(
+      (d) => d.timestamp >= currentMinuteStart && d.timestamp <= now
     );
-    return intervalMinutes === 1 && filtered.length === 0 ? 0 : "N/A";
+
+    if (currentMinuteData.length === 0) {
+      console.log(`No data in current minute for ${stock_symbol}`);
+      return "N/A";
+    }
+
+    const firstPrice = currentMinuteData[0].open;           // Open of nearest minute
+    const lastPrice = dataPoints[dataPoints.length - 1].close; // Latest close overall
+    const pctChange = Number(
+      (((lastPrice - firstPrice) / firstPrice) * 100).toFixed(2)
+    );
+
+    console.log(
+      `Computed 0-minute change for ${stock_symbol}: ${pctChange}% ` +
+      `(open of nearest minute=${firstPrice}, latest close=${lastPrice})`
+    );
+    return pctChange;
+  } else if (intervalMinutes === 1) {
+    // Case: Open of second last minute to close of previous minute
+    // Filter data for the second last minute
+    const secondLastMinuteData = dataPoints.filter(
+      (d) =>
+        d.timestamp >= secondLastMinuteStart &&
+        d.timestamp < previousMinuteStart
+    );
+    // Filter data for the previous minute
+    const previousMinuteData = dataPoints.filter(
+      (d) =>
+        d.timestamp >= previousMinuteStart &&
+        d.timestamp < currentMinuteStart
+    );
+
+    if (secondLastMinuteData.length === 0 || previousMinuteData.length === 0) {
+      console.log(
+        `Insufficient data for 1-minute interval for ${stock_symbol}`
+      );
+      return "N/A";
+    }
+
+    const firstPrice = secondLastMinuteData[0].open;           // Open of second last minute
+    const lastPrice = previousMinuteData[previousMinuteData.length - 1].close; // Close of previous minute
+    const pctChange = Number(
+      (((lastPrice - firstPrice) / firstPrice) * 100).toFixed(2)
+    );
+
+    console.log(
+      `Computed 1-minute change for ${stock_symbol}: ${pctChange}% ` +
+      `(open of 2nd last minute=${firstPrice}, close of prev minute=${lastPrice})`
+    );
+    return pctChange;
+  } else {
+    // For other intervals (not specified, so generalize)
+    const intervalStart = currentMinuteStart - intervalMinutes * 60 * 1000;
+    const lastCompletedMinute = currentMinuteStart - 60 * 1000;
+
+    const filtered = dataPoints.filter(
+      (d) => d.timestamp >= intervalStart && d.timestamp <= lastCompletedMinute
+    );
+
+    if (filtered.length === 0) {
+      console.log(`No data points in ${intervalMinutes}-minute interval`);
+      return "N/A";
+    }
+
+    const firstPrice = filtered[0].open;
+    const lastPrice = filtered[filtered.length - 1].close;
+    const pctChange = Number(
+      (((lastPrice - firstPrice) / firstPrice) * 100).toFixed(2)
+    );
+
+    console.log(
+      `Computed ${intervalMinutes}-minute change: ${pctChange}% ` +
+      `(first=${firstPrice}, last=${lastPrice})`
+    );
+    return pctChange;
   }
-
-  // For the specified interval, use the earliest open and latest close within filtered
-  const firstPrice = filtered[0].open; // Start of the interval
-  const lastPrice = filtered[filtered.length - 1].close; // End of the interval (last completed minute)
-  const pctChange = Number(
-    (((lastPrice - firstPrice) / firstPrice) * 100).toFixed(2)
-  );
-
-  console.log(
-    `  Computed ${intervalMinutes}-minute change: ${pctChange}% (first=${firstPrice} (open), last=${lastPrice} (close))`
-  );
-  return pctChange;
 }
 
 module.exports = {
