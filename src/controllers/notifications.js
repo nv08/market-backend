@@ -1,7 +1,4 @@
 // server/routes/notifications.js
-const express = require("express");
-const router = express.Router();
-
 // Simulated stock data (replace with your actual data source later)
 const stockData = {
   AAPL: { price: 150, lastPrice: 145 },

@@ -33,7 +33,7 @@ async function startServer() {
   scheduleAggregations();
   // setInterval(runAggregations, RUNNING_AGGREGATIONS_INTERVAL);
   simulateWebSocketData(1, "INE040H01021", 1)
-  simulateWebSocketData(1, "INE00CE01017", 5)
+  simulateWebSocketData(1, "INE00CE01017", -5)
 
   try {
     const result = await pool.query(
