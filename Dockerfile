@@ -24,6 +24,7 @@ COPY . .
 ENV POSTGRES_USER=postgres
 ENV POSTGRES_PASSWORD=mysecretpassword
 ENV POSTGRES_DB=stock_data
+ENV UPSTOX_TOKEN=eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3TkFGNjkiLCJqdGkiOiI2N2UwZTFmYTE3MmJkYjQzNGVlYmJlZTEiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaWF0IjoxNzQyNzkxMTYyLCJpc3MiOiJ1ZGFwaS1nYXRld2F5LXNlcnZpY2UiLCJleHAiOjE3NDI4NTM2MDB9.22uTJoprggFgXLqx3Kfu0tQEKf2QaGWhgdx_CqvLpFU
 
 # Set environment variables for the app to connect to the DB
 ENV DB_HOST=localhost
