@@ -3,6 +3,8 @@ const { computePctChange, currentBuffer } = require("../memory");
 const {
   DEFAULT_TOP_STOCKS_LIMIT,
   DEFAULT_SORT_MINUTE,
+  MEMORY_INTERVALS,
+  DB_INTERVALS,
 } = require("../constants");
 
 const getTopStocks = async (req, res) => {
@@ -10,8 +12,8 @@ const getTopStocks = async (req, res) => {
   const sortInterval = sort ? parseInt(sort, 10) : DEFAULT_SORT_MINUTE;
   const sortOrder = order ? order.toLowerCase() : "desc"; // Default to 'desc'
   const limit = DEFAULT_TOP_STOCKS_LIMIT;
-  const memoryIntervals = [0, 1, 2, 3, 4, 5];
-  const dbIntervals = [10, 15, 30, 60];
+  const memoryIntervals = MEMORY_INTERVALS;
+  const dbIntervals = DB_INTERVALS;
 
   // Validate sortOrder
   if (!["asc", "desc"].includes(sortOrder)) {

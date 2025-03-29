@@ -1,6 +1,6 @@
 "use strict";
 
-const { MEMORY_MAX_WINDOW } = require("./constants");
+const { MEMORY_MAX_WINDOW, THROTTLED_LOG_TIMER } = require("./constants");
 const { createThrottledLog } = require("./helper");
 
 let currentBuffer = new Map();
@@ -10,7 +10,7 @@ const throttledLoggers = new Map();
 
 function getThrottledLogger(stock_symbol) {
   if (!throttledLoggers.has(stock_symbol)) {
-    throttledLoggers.set(stock_symbol, createThrottledLog(5000));
+    throttledLoggers.set(stock_symbol, createThrottledLog(THROTTLED_LOG_TIMER));
   }
   return throttledLoggers.get(stock_symbol);
 }
