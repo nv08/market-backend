@@ -19,7 +19,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(cors());
 
-console.log(colorize.red("Starting server...").bold());
+console.log(colorize.system("Starting server..."));
 
 function handleWebSocketData(data) {
   if (data) {

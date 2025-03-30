@@ -1,6 +1,7 @@
 "use strict";
 
 const { Pool } = require("pg");
+const { colorize } = require("./helper");
 require("dotenv").config();
 
 const pool = new Pool({
@@ -55,7 +56,8 @@ const setupDatabase = async () => {
 
     await client.query("COMMIT");
     console.log(
-      "Database setup completed: hypertable and aggregates table created."
+      colorize.info(
+      "Database setup completed: hypertable and aggregates table created.")
     );
   } catch (error) {
     await client.query("ROLLBACK");

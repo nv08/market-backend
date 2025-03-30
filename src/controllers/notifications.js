@@ -1,4 +1,3 @@
-const { colorize } = require("../helper");
 const { currentBuffer, computePctChange } = require("../memory");
 
 // Notification thresholds per interval (in minutes)

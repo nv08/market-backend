@@ -1,14 +1,14 @@
 const _ = require("lodash");
 
-const createThrottledLog = (interval) => {
-  return _.throttle((message) => {
-    console.log(message);
+const throttledCallback = (interval) => {
+  return _.throttle((cb) => {
+    cb();
   }, interval);
 };
 
 const MarketDataApiToOHLC = (data, symbol) => {
   if (!data || !data.candles || data.candles.length === 0) {
-    console.log("stock data returned empty");
+    console.log(colorize.warning("stock data returned empty"));
     return [];
   }
   const modifiedData = data.candles.map((candle) => ({
@@ -155,17 +155,17 @@ class ColorString {
 }
 
 const colorize = {
-  red: (text) => new ColorString(`${colors.red}${text}`),
-  green: (text) => new ColorString(`${colors.green}${text}`),
-  yellow: (text) => new ColorString(`${colors.yellow}${text}`),
-  blue: (text) => new ColorString(`${colors.blue}${text}`),
-  magenta: (text) => new ColorString(`${colors.magenta}${text}`),
-  cyan: (text) => new ColorString(`${colors.cyan}${text}`)
+  error: (text) => new ColorString(`${colors.red}${text}`).bold(),
+  success: (text) => new ColorString(`${colors.green}${text}`).bold(),
+  warning: (text) => new ColorString(`${colors.yellow}${text}`).bold(),
+  info: (text) => new ColorString(`${colors.blue}${text}`).bold(),
+  debug: (text) => new ColorString(`${colors.magenta}${text}`).bold(),
+  system: (text) => new ColorString(`${colors.cyan}${text}`).bold(),
 };
 
 
 module.exports = {
-  createThrottledLog,
+  throttledCallback,
   MarketDataApiToOHLC,
   MarketDataWebsocketToOHLC,
   colorize

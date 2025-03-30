@@ -1,4 +1,4 @@
-const { MarketDataApiToOHLC, MarketDataWebsocketToOHLC } = require("../helper");
+const { MarketDataApiToOHLC, MarketDataWebsocketToOHLC, colorize } = require("../helper");
 const { Buffer } = require("buffer");
 const { FeedResponse } = require("./marketDataFeed_pb");
 const WebSocket = require("ws");
@@ -25,7 +25,7 @@ const getStockData = async (instrument) => {
     }
     return data;
   } catch (error) {
-    console.error("Error fetching stock data:", error);
+    console.error(colorize.error(`Error fetching stock data: ${error}`));
     return {};
   }
 };
@@ -48,7 +48,7 @@ class UpstoxWebSocket {
       let apiInstance = new UpstoxClient.WebsocketApi();
       apiInstance.getMarketDataFeedAuthorize(apiVersion, (error, data) => {
         if (error) {
-          console.error("Error fetching WebSocket URL:", error);
+          console.error(colorize.error(`Error fetching WebSocket URL: ${error.status}`));
           reject(error);
         } else {
           resolve(data.data.authorizedRedirectUri);
@@ -61,7 +61,7 @@ class UpstoxWebSocket {
     try {
       return FeedResponse.deserializeBinary(buffer);
     } catch (error) {
-      console.warn("Failed to decode protobuf:", error);
+      console.log(colorize.warning(`Failed to decode protobuf: ${error}`));
       return null;
     }
   }
@@ -79,7 +79,7 @@ class UpstoxWebSocket {
 
       this.ws.on("open", () => {
         this.onOpen();
-        console.log("Connected");
+        console.log(colorize.success("Connected"));
         this.subscriptions.forEach(({ data, callback }) => {
           this.sendSubscription(data, callback);
         });
@@ -88,12 +88,12 @@ class UpstoxWebSocket {
 
       this.ws.on("close", () => {
         this.onClose();
-        console.log("Disconnected");
+        console.log(colorize.warning("Disconnected"));
       });
 
       this.ws.on("error", (error) => {
         this.onError(error);
-        console.error("WebSocket error:", error);
+        console.error(colorize.error("WebSocket error:", error.status));
       });
 
       this.ws.on("message", (data) => {
@@ -117,7 +117,7 @@ class UpstoxWebSocket {
               if (cb) {
                 cb(response);
               } else {
-                console.warn(`No callback found for symbol ${sym}`);
+                console.log(colorize.warning(`No callback found for symbol ${sym}`));
               }
             }
           });
@@ -126,18 +126,18 @@ class UpstoxWebSocket {
         }
       });
     } catch (error) {
-      console.error("WebSocket connection error:", error);
+      console.log(colorize.error(`WebSocket connection error: ${error.status} ${error.message}`));
       this.onError(error);
     }
   }
 
   sendSubscription(data, callback) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("WebSocket not open, cannot send subscription");
+      console.warn(colorize.warning("WebSocket not open, cannot send subscription"));
       return;
     }
     this.ws.send(Buffer.from(JSON.stringify(data)));
-    console.log(`Subscription sent: ${JSON.stringify(data)}`);
+    console.log(colorize.info(`Subscription sent: ${JSON.stringify(data)}`));
     const [_, symbol] = data.data.instrumentKeys[0].split("|");
     this.callbacks.set(symbol, callback);
   }
@@ -156,15 +156,16 @@ class UpstoxWebSocket {
       this.sendSubscription(data, callback);
     } else {
       this.subscriptions.push({ data, callback });
-      console.warn(
-        "WebSocket is not open. Subscription added to pending list."
+      console.log(
+        colorize.info(
+        "WebSocket is not open. Subscription added to pending list.")
       );
     }
   }
 
   unsubscribe(symbol) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn("WebSocket is not open, cannot unsubscribe");
+      console.warn(colorize.warning("WebSocket not open, cannot unsubscribe"));
       return;
     }
 
@@ -178,23 +179,23 @@ class UpstoxWebSocket {
     };
 
     this.ws.send(Buffer.from(JSON.stringify(data)));
-    console.log(`Unsubscription sent: ${JSON.stringify(data)}`);
+    console.log(colorize.info(`Unsubscription sent: ${JSON.stringify(data)}`));
     this.callbacks.delete(`NSE_EQ|${symbol}`);
   }
 
   close() {
     if (this.ws) {
       this.ws.close();
-      console.log("WebSocket connection closed manually");
+      console.log(colorize.warning("WebSocket connection closed manually"));
     }
   }
 }
 
 const token = process.env.UPSTOX_TOKEN;
 
-const onOpen = () => console.log("WebSocket opened");
-const onClose = () => console.log("WebSocket closed");
-const onError = (error) => console.error("WebSocket error:", error);
+const onOpen = () => console.log(colorize.success("WebSocket opened"));
+const onClose = () => console.log(colorize.warning("WebSocket closed"));
+const onError = () => console.error(colorize.error("WebSocket error"));
 
 const upstoxWebsocket = new UpstoxWebSocket(token, onOpen, onClose, onError);
 

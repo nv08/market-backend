@@ -4,11 +4,13 @@ const { pool } = require("./db");
 const { from: copyFrom } = require("pg-copy-streams");
 const { currentBuffer, flushingBuffer } = require("./memory");
 const { Readable } = require("stream");
+const { DB_INTERVALS, RUNNING_AGGREGATIONS_INTERVAL } = require("./constants");
+const { colorize } = require("./helper");
 
 const lastFlushedTimestamps = new Map();
 
 async function flushToDatabase() {
-  console.log("Current buffer size before flush:", currentBuffer.size);
+  console.log(colorize.debug("Current buffer size before flush: " + currentBuffer.size));
   flushingBuffer.clear();
 
   const seenKeys = new Set();
@@ -23,9 +25,9 @@ async function flushToDatabase() {
         seenKeys.add(key);
         uniqueData.push({ ...d });
       } else {
-        console.log(
-          `Skipped ${key}: already flushed or duplicate in this batch`
-        );
+        // console.log(
+        //   `Skipped ${key}: already flushed or duplicate in this batch`
+        // );
       }
     }
 
@@ -44,7 +46,7 @@ async function flushToDatabase() {
 
   const client = await pool.connect();
   try {
-    console.time("flush");
+    console.time(colorize.info("flush"));
 
     // Check existing timestamps in DB
     const allKeys = [...seenKeys];
@@ -55,7 +57,7 @@ async function flushToDatabase() {
       [allKeys]
     );
     const existingKeys = new Set(existingResult.rows.map((row) => row.key));
-    console.log("Existing keys in DB:", [...existingKeys]);
+    // console.log("Existing keys in DB:", [...existingKeys]);
 
     const rows = [];
     let rowCount = 0;
@@ -85,7 +87,7 @@ async function flushToDatabase() {
       return;
     }
 
-    console.log(`Flushing ${rowCount} rows:`, rows);
+    console.log(colorize.info(`Flushing ${rowCount} rows`));
 
     const readableStream = Readable.from(rows);
     const copyStream = client.query(
@@ -99,10 +101,7 @@ async function flushToDatabase() {
 
     await new Promise((resolve, reject) => {
       copyStream.on("finish", () => {
-        console.timeEnd("flush");
-        console.log(
-          `Flushed ${rowCount} rows across ${flushingBuffer.size} stocks to database`
-        );
+        console.timeEnd(colorize.info("flush"));
         for (const [stock_symbol, maxTs] of maxTimestamps) {
           lastFlushedTimestamps.set(stock_symbol, maxTs);
         }
@@ -116,7 +115,7 @@ async function flushToDatabase() {
 
     flushingBuffer.clear();
   } catch (e) {
-    console.error("Flush failed:", e.message);
+    console.log(colorize.error("Flush failed:", e.message));
     throw e;
   } finally {
     client.release();
@@ -124,11 +123,11 @@ async function flushToDatabase() {
 }
 
 async function runAggregation(client, interval, intervalMs, nowMs) {
-  console.log(
-    `Running aggregation for ${interval}-minute interval at ${new Date(
-      nowMs
-    ).toISOString()}`
-  );
+  // console.log(
+  //   `Running aggregation for ${interval}-minute interval at ${new Date(
+  //     nowMs
+  //   ).toISOString()}`
+  // );
   await client.query(
     `
     INSERT INTO stock_aggregates (stock_symbol, interval_minutes, timestamp_bucket, pct_change)
@@ -151,29 +150,25 @@ async function runAggregation(client, interval, intervalMs, nowMs) {
 }
 
 function scheduleAggregations() {
-  const dbIntervals = [
-    { minutes: 10, ms: 10 * 60 * 1000 },
-    { minutes: 15, ms: 15 * 60 * 1000 },
-    { minutes: 30, ms: 15 * 60 * 1000 },
-    { minutes: 60, ms: 15 * 60 * 1000 },
-  ];
-
-  dbIntervals.forEach(({ minutes, ms }) => {
+  const aggregationInterval = RUNNING_AGGREGATIONS_INTERVAL
+  DB_INTERVALS.forEach((minutes) => {
     setInterval(async () => {
       const client = await pool.connect();
       try {
         const nowMs = Math.floor(Date.now());
-        await runAggregation(client, minutes, ms, nowMs);
-        console.log(`Aggregation completed for ${minutes}-minute interval`);
+        await runAggregation(client, minutes, aggregationInterval, nowMs);
+        console.log(colorize.success(`Aggregation completed for ${minutes}-minute interval`));
       } catch (e) {
-        console.error(
-          `Aggregation failed for ${minutes}-minute interval:`,
-          e.message
+        console.log(
+          colorize.error(
+            `Aggregation failed for ${minutes}-minute interval:`,
+            e.message
+          )
         );
       } finally {
         client.release();
       }
-    }, ms);
+    }, aggregationInterval);
   });
 }
 

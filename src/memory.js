@@ -1,7 +1,7 @@
 "use strict";
 
 const { MEMORY_MAX_WINDOW, THROTTLED_LOG_TIMER } = require("./constants");
-const { createThrottledLog } = require("./helper");
+const { throttledCallback } = require("./helper");
 
 let currentBuffer = new Map();
 let flushingBuffer = new Map();
@@ -10,7 +10,7 @@ const throttledLoggers = new Map();
 
 function getThrottledLogger(stock_symbol) {
   if (!throttledLoggers.has(stock_symbol)) {
-    throttledLoggers.set(stock_symbol, createThrottledLog(THROTTLED_LOG_TIMER));
+    throttledLoggers.set(stock_symbol, throttledCallback(THROTTLED_LOG_TIMER));
   }
   return throttledLoggers.get(stock_symbol);
 }
@@ -69,13 +69,17 @@ function addStockData(data) {
   }
 
   const log = getThrottledLogger(stock_symbol);
-  log(
-    `Added data for ${stock_symbol}, buffer size: ${dataPoints.length}, ` +
-      `timestamps: ${dataPoints
-        .map((d) => new Date(d.timestamp).toISOString())
-        .join(", ")}, ` +
-      `latestClose: ${stockData.latestClose}`
-  );
+  log(() => {
+    console.table(dataPoints.map(d => ({
+      Time: new Date(d.timestamp).toLocaleTimeString(),
+      Symbol: stock_symbol,
+      CMP: d.cmp,
+      Open: d.open,
+      High: d.high,
+      Low: d.low,
+      Close: d.close
+    })).slice(-10));
+  });
 }
 
 function removeStockFromMemory(stock_symbol) {
