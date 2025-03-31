@@ -10,11 +10,12 @@ function handleWebSocketData(data) {
 }
 
 const addStock = async (req, res) => {
-  const stockSymbols = Array.isArray(req.query.stock_symbol)
-    ? req.query.stock_symbol
-    : [req.query.stock_symbol].filter(Boolean);
+  const { stock_symbol } = req.body;
+  const stockSymbols = Array.isArray(stock_symbol)
+    ? stock_symbol
+    : [stock_symbol].filter(Boolean);
 
-  if (!stockSymbols.length) return res.status(400).send("Missing stock_symbol");
+  if (!stockSymbols.length) return res.status(400).send("Missing stock_symbol in request body");
 
   try {
     const client = await pool.connect();
@@ -57,8 +58,8 @@ const addStock = async (req, res) => {
 };
 
 const removeStock = async (req, res) => {
-  const { stock_symbol } = req.query;
-  if (!stock_symbol) return res.status(400).send("Missing stock_symbol");
+  const { stock_symbol } = req.body;
+  if (!stock_symbol) return res.status(400).send("Missing stock_symbol in request body");
 
   try {
     const client = await pool.connect();

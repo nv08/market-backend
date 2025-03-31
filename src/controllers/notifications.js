@@ -1,92 +1,94 @@
 const { currentBuffer, computePctChange } = require("../memory");
+const { NOTIFICATION_THRESHOLDS, NOTIFICATION_CHECK_INTERVAL, NOTIFICATION_DISPATCH_INTERVAL, NOTIFICATION_COOLDOWN, MAX_NOTIFICATIONS_PER_BATCH } = require("../constants");
+// State management
+const notificationQueue = [];
+const lastNotificationTime = new Map();
 
-// Notification thresholds per interval (in minutes)
-const notificationThresholds = {
-  0: 0.50, // 0.50%
-  1: 0.75, // 0.75%
-  2: 1.00, // 1%
-  3: 1.25, // 1.25%
-  4: 1.50, // 1.50%
-  5: 1.75, // 1.75%
+const isStockInCooldown = (symbol) => {
+  const lastTime = lastNotificationTime.get(symbol);
+  return lastTime && (Date.now() - lastTime) < NOTIFICATION_COOLDOWN;
 };
 
-// Queue to hold notifications
-const notificationQueue = [];
+const checkStockThresholds = (symbol, stockData) => {
+  if (!stockData.latestClose || stockData.dataPoints.length === 0) {
+    return null;
+  }
 
-// Function to check for notifications and enqueue them
+  // Skip if stock is in cooldown
+  if (isStockInCooldown(symbol)) {
+    return null;
+  }
+
+  // Check thresholds in ascending order
+  for (const [intervalStr, threshold] of Object.entries(NOTIFICATION_THRESHOLDS)) {
+    const interval = parseInt(intervalStr, 10);
+    const pctChange = computePctChange(symbol, interval);
+
+    if (pctChange === "N/A") continue;
+
+    const absPctChange = Math.abs(pctChange);
+    if (absPctChange >= threshold) {
+      lastNotificationTime.set(symbol, Date.now());
+      return {
+        symbol,
+        interval,
+        pctChange,
+        absPctChange,
+      };
+    }
+  }
+  return null;
+};
+
+const createNotificationMessage = (data) => ({
+  symbol: data.symbol,
+  message: `Price ${data.pctChange > 0 ? 'increased' : 'decreased'} by ${data.absPctChange.toFixed(2)}% in the last ${data.interval} minute(s)!`,
+});
+
 const checkForNotifications = () => {
   const stockSymbols = Array.from(currentBuffer.keys());
 
   stockSymbols.forEach((symbol) => {
-    const stockData = currentBuffer.get(symbol) || {
-      dataPoints: [],
-      latestClose: null,
-    };
+    const stockData = currentBuffer.get(symbol);
+    const thresholdData = checkStockThresholds(symbol, stockData);
 
-    // Skip if no data available
-    if (!stockData.latestClose || stockData.dataPoints.length === 0) {
-      return;
-    }
-
-    // Check intervals in ascending order (0 to 5) and notify only the first breach
-    for (const intervalStr of Object.keys(notificationThresholds)) {
-      const interval = parseInt(intervalStr, 10);
-      const threshold = notificationThresholds[interval];
-      const pctChange = computePctChange(symbol, interval);
-
-      // Skip if pctChange is "N/A"
-      if (pctChange === "N/A") {
-        continue;
-      }
-
-      const absPctChange = Math.abs(pctChange);
-      if (absPctChange >= threshold) {
-        const direction = pctChange > 0 ? "increased" : "decreased";
-        const eventData = {
-          symbol,
-          message: `price ${direction} by ${absPctChange.toFixed(2)}% in the last ${interval} minute(s)!`,
-        };
-        notificationQueue.push(eventData);
-        console.log(`Enqueued notification for ${symbol}: ${JSON.stringify(eventData)}`);
-        break; // Stop checking further intervals for this stock
-      }
+    if (thresholdData) {
+      const notification = createNotificationMessage(thresholdData);
+      notificationQueue.push(notification);
+      console.log(`Enqueued notification for ${symbol}:`, notification);
     }
   });
 };
 
-// Function to process the queue and send notifications periodically
 const processNotificationQueue = (res) => {
   if (notificationQueue.length > 0) {
-    const eventData = notificationQueue.shift(); // Take the first notification
-    res.write(`data: ${JSON.stringify(eventData)}\n\n`);
-    console.log(`Sent notification from queue: ${JSON.stringify(eventData)}`);
+    // Process only one notification per dispatch interval
+    for (let i = 0; i < Math.min(MAX_NOTIFICATIONS_PER_BATCH, notificationQueue.length); i++) {
+      const notification = notificationQueue.shift();
+      res.write(`data: ${JSON.stringify(notification)}\n\n`);
+      console.log('Dispatched notification:', notification);
+    }
   }
 };
 
-// SSE endpoint
 const notification = (req, res) => {
-  // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  // Check notifications every 15 seconds
-  const checkIntervalId = setInterval(() => checkForNotifications(res), 15 * 1000);
+  const checkIntervalId = setInterval(checkForNotifications, NOTIFICATION_CHECK_INTERVAL);
+  const dispatchIntervalId = setInterval(() => processNotificationQueue(res), NOTIFICATION_DISPATCH_INTERVAL);
 
-  // Process queue every 5 seconds
-  const queueIntervalId = setInterval(() => processNotificationQueue(res), 2 * 1000);
+  // Initial check
+  checkForNotifications();
 
-  // Initial check on connection
-  checkForNotifications(res);
-
-  // Clean up when client disconnects
   req.on("close", () => {
     clearInterval(checkIntervalId);
-    clearInterval(queueIntervalId);
+    clearInterval(dispatchIntervalId);
     res.end();
     console.log("SSE client disconnected");
   });
 };
 
-module.exports = { notification, checkForNotifications };
+module.exports = { notification };

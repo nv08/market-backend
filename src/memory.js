@@ -1,7 +1,7 @@
 "use strict";
 
 const { MEMORY_MAX_WINDOW, THROTTLED_LOG_TIMER } = require("./constants");
-const { throttledCallback } = require("./helper");
+const { throttledCallback, colorize } = require("./helper");
 
 let currentBuffer = new Map();
 let flushingBuffer = new Map();
@@ -98,7 +98,7 @@ function computePctChange(stock_symbol, intervalMinutes) {
   const { dataPoints } = stockData;
 
   if (dataPoints.length === 0) {
-    console.log(`No data points in buffer for ${stock_symbol}`);
+    console.log(colorize.warning(`No data points in buffer for ${stock_symbol}`));
     return "N/A";
   }
 
@@ -137,8 +137,8 @@ function computePctChange(stock_symbol, intervalMinutes) {
     );
 
     console.log(
-      `Computed 0-minute change for ${stock_symbol}: ${pctChange}% ` +
-      `(open of nearest minute=${firstPrice}, latest close=${lastPrice})`
+      `Computed ${colorize.warning("0-minute")} change for ${colorize.warning(stock_symbol)}: ${colorize.warning(pctChange + '%')} ` +
+      `(open of nearest minute=${colorize.warning(firstPrice)}, latest close=${colorize.warning(lastPrice)})`
     );
     return pctChange;
   } else if (intervalMinutes === 1) {
@@ -170,8 +170,8 @@ function computePctChange(stock_symbol, intervalMinutes) {
     );
 
     console.log(
-      `Computed 1-minute change for ${stock_symbol}: ${pctChange}% ` +
-      `(open of 2nd last minute=${firstPrice}, close of prev minute=${lastPrice})`
+      `Computed ${colorize.warning("1-minute")} change for ${colorize.warning(stock_symbol)}: ${colorize.warning(pctChange + '%')} ` +
+      `(open of 2nd last minute=${colorize.warning(firstPrice)}, close of prev minute=${colorize.warning(lastPrice)})`
     );
     return pctChange;
   } else {
@@ -195,8 +195,8 @@ function computePctChange(stock_symbol, intervalMinutes) {
     );
 
     console.log(
-      `Computed ${intervalMinutes}-minute change: ${pctChange}% ` +
-      `(first=${firstPrice}, last=${lastPrice})`
+      `Computed ${colorize.warning(intervalMinutes)}-minute change: ${colorize.warning(pctChange + '%')} ` +
+      `(first=${colorize.warning(firstPrice)}, last=${colorize.warning(lastPrice)})`
     );
     return pctChange;
   }

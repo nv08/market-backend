@@ -48,16 +48,26 @@ const getTopStocks = async (req, res) => {
       // Fetch precomputed changes for DB intervals (10, 15, 30, 60)
       const aggregatesResult = await client.query(
         `
-        SELECT stock_symbol, interval_minutes, pct_change
-        FROM stock_aggregates
-        WHERE stock_symbol = ANY($1::text[])
-        AND interval_minutes = ANY($2::integer[])
-        AND timestamp_bucket = (
-          SELECT MAX(timestamp_bucket)
+        WITH latest_buckets AS (
+          SELECT 
+            stock_symbol,
+            interval_minutes,
+            MAX(timestamp_bucket) as latest_bucket
           FROM stock_aggregates
-          WHERE stock_symbol = stock_aggregates.stock_symbol
-          AND interval_minutes = stock_aggregates.interval_minutes
+          WHERE stock_symbol = ANY($1::text[])
+            AND interval_minutes = ANY($2::integer[])
+          GROUP BY stock_symbol, interval_minutes
         )
+        SELECT 
+          sa.stock_symbol,
+          sa.interval_minutes,
+          sa.pct_change
+        FROM stock_aggregates sa
+        INNER JOIN latest_buckets lb
+          ON sa.stock_symbol = lb.stock_symbol
+          AND sa.interval_minutes = lb.interval_minutes
+          AND sa.timestamp_bucket = lb.latest_bucket
+        ORDER BY sa.stock_symbol, sa.interval_minutes
         `,
         [subscribedStocks, dbIntervals]
       );
@@ -114,6 +124,93 @@ const getTopStocks = async (req, res) => {
   }
 };
 
+const getStocksPercentage = async (req, res) => {
+  const { symbols } = req.body;
+  
+  if (!Array.isArray(symbols)) {
+    return res.status(400).send("Symbols must be an array");
+  }
+
+  try {
+    const client = await pool.connect();
+    try {
+      // Prepare stock map with cmp from memory
+      const stockMap = new Map();
+      symbols.forEach((symbol) => {
+        const stockData = currentBuffer.get(symbol);
+        const cmp =
+          stockData && stockData.latestClose !== undefined
+            ? stockData.latestClose
+            : "N/A";
+        stockMap.set(symbol, {
+          stock_symbol: symbol,
+          cmp,
+        });
+      });
+
+      // Fetch precomputed changes for DB intervals
+      const aggregatesResult = await client.query(
+        `
+        WITH latest_buckets AS (
+          SELECT 
+            stock_symbol,
+            interval_minutes,
+            MAX(timestamp_bucket) as latest_bucket
+          FROM stock_aggregates
+          WHERE stock_symbol = ANY($1::text[])
+            AND interval_minutes = ANY($2::integer[])
+          GROUP BY stock_symbol, interval_minutes
+        )
+        SELECT 
+          sa.stock_symbol,
+          sa.interval_minutes,
+          sa.pct_change
+        FROM stock_aggregates sa
+        INNER JOIN latest_buckets lb
+          ON sa.stock_symbol = lb.stock_symbol
+          AND sa.interval_minutes = lb.interval_minutes
+          AND sa.timestamp_bucket = lb.latest_bucket
+        ORDER BY sa.stock_symbol, sa.interval_minutes
+        `,
+        [symbols, DB_INTERVALS]
+      );
+
+      // Process DB intervals
+      aggregatesResult.rows.forEach((row) => {
+        const stock = stockMap.get(row.stock_symbol) || {
+          stock_symbol: row.stock_symbol,
+          cmp: "N/A",
+        };
+        stock[`${row.interval_minutes}_minute_change`] =
+          row.pct_change !== null ? row.pct_change : "N/A";
+        stockMap.set(row.stock_symbol, stock);
+      });
+
+      // Compute percentage changes for memory intervals
+      symbols.forEach((symbol) => {
+        const stock = stockMap.get(symbol) || {
+          stock_symbol: symbol,
+          cmp: "N/A",
+        };
+        MEMORY_INTERVALS.forEach((interval) => {
+          const pctChange = computePctChange(symbol, interval);
+          stock[`${interval}_minute_change`] =
+            pctChange === null ? "N/A" : pctChange;
+        });
+        stockMap.set(symbol, stock);
+      });
+
+      res.json(Array.from(stockMap.values()));
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error("Error fetching stocks percentage:", e.message);
+    res.status(500).send("Internal server error");
+  }
+};
+
 module.exports = {
   getTopStocks,
+  getStocksPercentage, // Add this export
 };

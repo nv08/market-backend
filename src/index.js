@@ -7,7 +7,7 @@ const cors = require("cors");
 require("dotenv").config();
 const { FLUSHING_TO_DB_INTERVAL } = require("./constants");
 const { addStock, removeStock } = require("./controllers/crud");
-const { getTopStocks } = require("./controllers/computation");
+const { getTopStocks, getStocksPercentage } = require("./controllers/computation");
 const { addStockData } = require("./memory");
 const { fetchAndStoreInitialData } = require("./query");
 const { upstoxWebsocket } = require("./websocket");
@@ -58,7 +58,9 @@ async function startServer() {
   console.log("Server started");
 }
 
+app.use(express.json()); // Add this line to parse JSON body
 app.get("/stocks/top", getTopStocks);
+app.post("/stocks/percentage", getStocksPercentage); // Add this new route
 app.post("/stocks/add", addStock);
 app.post("/stocks/remove", removeStock);
 app.get("/notifications", notification);
