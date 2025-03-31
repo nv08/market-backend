@@ -6,7 +6,7 @@ const { flushToDatabase, scheduleAggregations } = require("./aggregator");
 const cors = require("cors");
 require("dotenv").config();
 const { FLUSHING_TO_DB_INTERVAL } = require("./constants");
-const { addStock, removeStock } = require("./controllers/crud");
+const { addStock, removeStock, getAllStocks } = require("./controllers/crud");
 const { getTopStocks, getStocksPercentage } = require("./controllers/computation");
 const { addStockData } = require("./memory");
 const { fetchAndStoreInitialData } = require("./query");
@@ -65,6 +65,7 @@ app.post("/stocks/percentage", getStocksPercentage); // Add this new route
 app.post("/stocks/add", addStock);
 app.post("/stocks/remove", removeStock);
 app.get("/notifications", notification);
+app.get("/stocks/all", getAllStocks);
 
 app.get("/ping", (req, res) => res.send("ok"));
 

@@ -105,7 +105,20 @@ const removeStock = async (req, res) => {
   }
 };
 
+const getAllStocks = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT stock_symbol, subscribed_at FROM stock_subscriptions ORDER BY subscribed_at DESC`
+    );
+    res.json(result.rows.map(row=> row.stock_symbol));
+  } catch (e) {
+    console.error("Error fetching subscribed stocks:", e.message);
+    res.status(500).send("Internal server error");
+  }
+};
+
 module.exports = {
   addStock,
   removeStock,
+  getAllStocks,
 };
