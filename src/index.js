@@ -31,10 +31,10 @@ async function startServer() {
   await setupDatabase();
   setInterval(flushToDatabase, FLUSHING_TO_DB_INTERVAL);
   scheduleAggregations();
-  simulateWebSocketData(1, "INE040H01021", 1)
-  simulateWebSocketData(1, "INE00CE01017", -5)
-  simulateWebSocketData(1, "INE253B01015", 2)
-  simulateWebSocketData(1, "INE466L01038", 3)
+  // simulateWebSocketData(1, "INE040H01021", 1)
+  // simulateWebSocketData(1, "INE00CE01017", -5)
+  // simulateWebSocketData(1, "INE253B01015", 2)
+  // simulateWebSocketData(1, "INE466L01038", 3)
 
   try {
     const result = await pool.query(
