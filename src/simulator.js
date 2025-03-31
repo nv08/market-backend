@@ -8,15 +8,22 @@ const generateRandomStockData = (
   elapsedMinutes,
   pctIncreasePerMinute
 ) => {
-  const priceIncrease = (pctIncreasePerMinute / 100) * elapsedMinutes;
-  const calculatedPrice = basePrice * (1 + priceIncrease);
+  // Calculate the compounded price
+  const priceIncreasePerMinute = pctIncreasePerMinute / 100;
+  // Using compound interest formula: A = P(1 + r)^t
+  const compoundedPrice = basePrice * Math.pow(1 + priceIncreasePerMinute, elapsedMinutes);
+  
+  // Calculate previous close (price at elapsedMinutes - 1)
+  const previousElapsedMinutes = Math.max(elapsedMinutes - 1, 0);
+  const previousClose = basePrice * Math.pow(1 + priceIncreasePerMinute, previousElapsedMinutes);
+
   return {
     stock_symbol: stock_symbol,
-    cmp: calculatedPrice.toFixed(2),
-    open: basePrice.toFixed(2),
-    high: (calculatedPrice + 1).toFixed(2),
-    low: (calculatedPrice - 0.5).toFixed(2),
-    close: calculatedPrice.toFixed(2),
+    cmp: compoundedPrice.toFixed(2),
+    open: previousClose.toFixed(2), // Open is the previous close
+    high: (compoundedPrice + 1).toFixed(2),
+    low: (compoundedPrice - 0.5).toFixed(2),
+    close: compoundedPrice.toFixed(2),
     timestamp: new Date().getTime(),
   };
 };
@@ -25,7 +32,7 @@ const activeSimulations = new Map();
 
 const simulateWebSocketData = (rps, stock_symbol, pctIncreasePerMinute = 1) => {
   const interval = 1000 / rps;
-  const basePrice = 150.0;
+  const basePrice = 100;
   const startTime = Date.now();
 
   const intervalId = setInterval(() => {
